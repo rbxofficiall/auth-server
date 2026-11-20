@@ -1,0 +1,8 @@
+# Секреты и локальные данные — НЕ пушить в GitHub
+.env
+keys.json
+public_key.txt
+users.db
+
+# Node
+node_modules/

@@ -1,0 +1,10 @@
+{
+  "name": "cheat-auth-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Subscription licensing server: login+password, per-device HWID binding, days-based subscription, Ed25519-signed responses.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=22.5.0" }
+}

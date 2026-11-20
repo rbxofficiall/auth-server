@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Auth Admin</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#0b0b10; --card:#15151f; --line:#26263a; --txt:#e8e8f2; --dim:#8c8ca2; --acc:#7c5cff; --acc2:#a78bfa; --mint:#2ee6b8; --danger:#ff5470; }
+  * { box-sizing:border-box; }
+  body { background:var(--bg); color:var(--txt); font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif; margin:0; padding:24px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:var(--dim); font-size:12px; margin-bottom:18px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; }
+  label { display:block; color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.05em; margin-bottom:4px; }
+  input { background:#0e0e16; border:1px solid var(--line); border-radius:6px; color:var(--txt); padding:8px 10px; font-size:14px; min-width:140px; }
+  input:focus { outline:none; border-color:var(--acc); }
+  button { background:var(--acc); color:#0e0e16; border:0; border-radius:6px; padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; }
+  button:hover { background:var(--acc2); }
+  button.ghost { background:transparent; color:var(--txt); border:1px solid var(--line); }
+  button.danger { background:var(--danger); color:#fff; }
+  table { width:100%; border-collapse:collapse; margin-top:10px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); font-size:13px; }
+  th { color:var(--dim); font-size:11px; text-transform:uppercase; }
+  .tag { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; }
+  .ok  { background:rgba(46,230,184,.15); color:var(--mint); }
+  .bad { background:rgba(255,84,112,.15); color:var(--danger); }
+  #msg { margin:10px 0; font-size:13px; min-height:18px; }
+  .hidden { display:none; }
+  code { background:#0e0e16; padding:2px 6px; border-radius:4px; }
+</style>
+</head>
+<body>
+  <h1>Auth Admin</h1>
+  <div class="sub">Пользователи, подписки, привязка к устройствам (HWID)</div>
+
+  <div class="card" id="loginCard">
+    <label>Админ-токен (ADMIN_TOKEN из .env)</label>
+    <div class="row">
+      <input type="password" id="token" style="min-width:260px" placeholder="вставь токен">
+      <button onclick="saveToken()">Войти</button>
+    </div>
+    <div id="msg"></div>
+  </div>
+
+  <div id="panel" class="hidden">
+    <div class="card">
+      <label>Создать пользователя</label>
+      <div class="row">
+        <div><label>Логин</label><input id="nLogin" placeholder="vasya"></div>
+        <div><label>Пароль</label><input id="nPass" placeholder="SuperPass123"></div>
+        <div><label>Дней</label><input id="nDays" type="number" value="30" style="min-width:90px"></div>
+        <button onclick="createUser()">Создать</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <label>Действия по логину</label>
+      <div class="row">
+        <div><label>Логин</label><input id="aLogin" placeholder="vasya"></div>
+        <div><label>Дней</label><input id="aDays" type="number" value="14" style="min-width:90px"></div>
+        <button onclick="extend()">Продлить</button>
+        <button class="ghost" onclick="resetHwid()">Сбросить HWID</button>
+        <button class="ghost" onclick="ban(true)">Бан</button>
+        <button class="ghost" onclick="ban(false)">Разбан</button>
+        <button class="danger" onclick="del()">Удалить</button>
+      </div>
+      <div class="sub" style="margin:10px 0 0">«Сбросить HWID» — покупатель сменил ПК: аккаунт привяжется заново при следующем входе.</div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <button class="ghost" onclick="load()">Обновить список</button>
+      </div>
+      <table id="tbl">
+        <thead><tr><th>Логин</th><th>HWID</th><th>Подписка до</th><th>Осталось</th><th>Статус</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+let TOKEN = localStorage.getItem('admin_token') || '';
+if (TOKEN) enter();
+
+function msg(t, ok = true) { $('msg').textContent = t; $('msg').style.color = ok ? '#2ee6b8' : '#ff5470'; }
+function saveToken() { TOKEN = $('token').value.trim(); localStorage.setItem('admin_token', TOKEN); enter(); }
+
+async function enter() {
+  if (!TOKEN) return;
+  const r = await api('GET', '/api/admin/list');
+  if (r.status === 200) { $('loginCard').classList.add('hidden'); $('panel').classList.remove('hidden'); load(); }
+  else msg('Неверный токен', false);
+}
+
+async function api(method, route, body) {
+  const res = await fetch(route, {
+    method,
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Token': TOKEN },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  let json = {};
+  try { json = await res.json(); } catch (e) {}
+  return { status: res.status, json };
+}
+
+const fmt = u => u ? new Date(u * 1000).toLocaleString('ru-RU', { dateStyle:'short', timeStyle:'short' }) : '—';
+
+async function load() {
+  const { status, json } = await api('GET', '/api/admin/list');
+  if (status !== 200) return msg('Ошибка загрузки', false);
+  const tb = $('tbl').querySelector('tbody');
+  tb.innerHTML = '';
+  if (!json.length) { tb.innerHTML = '<tr><td colspan="5" style="color:var(--dim)">Пользователей нет — создай первого выше.</td></tr>'; return; }
+  const now = Date.now() / 1000;
+  for (const u of json) {
+    const left = Math.max(0, Math.ceil((u.sub_until - now) / 86400));
+    const active = !u.banned && u.sub_until > now;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><b>${u.login}</b></td><td>${u.hwid || '—'}</td><td>${fmt(u.sub_until)}</td>
+      <td>${left} дн.</td>
+      <td>${u.banned ? '<span class="tag bad">бан</span>'
+                    : active ? '<span class="tag ok">активна</span>'
+                             : '<span class="tag bad">истекла</span>'}</td>`;
+    tb.appendChild(tr);
+  }
+}
+
+async function createUser() {
+  const login = $('nLogin').value.trim(), password = $('nPass').value, days = +$('nDays').value;
+  if (!login || !password || !(days > 0)) return msg('Заполни логин, пароль и дни', false);
+  const { status, json } = await api('POST', '/api/admin/user', { login, password, days });
+  if (status === 200) { msg(`Создан ${login} до ${fmt(json.until)}`); $('nLogin').value = ''; $('nPass').value = ''; load(); }
+  else if (json.error === 'exists') msg('Такой логин уже есть', false);
+  else if (json.error === 'bad_request') msg('Логин: 3-32 символа, A-Z a-z 0-9 _ . -', false);
+  else msg('Ошибка', false);
+}
+
+function aLogin() { return $('aLogin').value.trim(); }
+
+async function extend() {
+  const days = +$('aDays').value;
+  const { status, json } = await api('POST', '/api/admin/extend', { login: aLogin(), days });
+  if (status === 200) { msg(`Продлено до ${fmt(json.until)}`); load(); } else msg('Не найден', false);
+}
+async function resetHwid() {
+  const { status } = await api('POST', '/api/admin/reset-hwid', { login: aLogin() });
+  if (status === 200) { msg('HWID сброшен'); load(); } else msg('Не найден', false);
+}
+async function ban(on) {
+  const { status } = await api('POST', '/api/admin/ban', { login: aLogin(), banned: on });
+  if (status === 200) { msg(on ? 'Забанен' : 'Разбанен'); load(); } else msg('Не найден', false);
+}
+async function del() {
+  if (!confirm('Удалить пользователя ' + aLogin() + '?')) return;
+  const { status } = await api('POST', '/api/admin/delete', { login: aLogin() });
+  if (status === 200) { msg('Удалён'); load(); } else msg('Не найден', false);
+}
+</script>
+</body>
+</html>
